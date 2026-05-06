@@ -49,7 +49,9 @@ fn print_usage() {
     println!("  tape record <program> [--out FILE]              run + record into FILE (default: trace.bin)");
     println!("  tape run <file.tape> [--out FILE]               interpret a .tape script and record into FILE");
     println!("  tape replay <program|file.tape> --trace FILE     replay program (built-in or .tape script) against FILE");
-    println!("  tape inspect <trace.bin> [--filter KIND] [--site HEX] [--since N] [--limit N] [--json]");
+    println!(
+        "  tape inspect <trace.bin> [--filter KIND] [--site HEX] [--since N] [--limit N] [--json]"
+    );
     println!("                                                  pretty-print the events in FILE");
     println!("  tape stats <trace.bin> [--json]                 summary stats: count by kind + hot sites");
     println!("  tape diff <a.tape> <b.tape>                     show the first divergence between two traces");

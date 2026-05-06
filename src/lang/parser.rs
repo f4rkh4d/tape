@@ -87,8 +87,7 @@ impl Parser {
         self.expect(&Tok::Let)?;
         let name = match self.eat() {
             Some(Token {
-                tok: Tok::Ident(n),
-                ..
+                tok: Tok::Ident(n), ..
             }) => n,
             other => {
                 return Err(ParseErr {
@@ -127,8 +126,7 @@ impl Parser {
         self.expect(&Tok::For)?;
         let name = match self.eat() {
             Some(Token {
-                tok: Tok::Ident(n),
-                ..
+                tok: Tok::Ident(n), ..
             }) => n,
             other => {
                 return Err(ParseErr {

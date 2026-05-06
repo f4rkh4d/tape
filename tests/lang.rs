@@ -50,7 +50,11 @@ fn lexer_skips_comments_and_recognises_dotted_ident() {
 fn lexer_two_char_operators() {
     let src = "a == b != c <= d >= e && f || g ..";
     let toks = lex(src).expect("lex ok");
-    let ops: Vec<&Tok> = toks.iter().map(|t| &t.tok).filter(|t| !matches!(t, Tok::Ident(_))).collect();
+    let ops: Vec<&Tok> = toks
+        .iter()
+        .map(|t| &t.tok)
+        .filter(|t| !matches!(t, Tok::Ident(_)))
+        .collect();
     let want = [
         Tok::Eq,
         Tok::Neq,

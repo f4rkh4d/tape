@@ -70,6 +70,26 @@ six demo programs ship in this build:
 | `wordcount` | env + fs.read + write | reads a file, prints lines/words/chars |
 | `greet` | env + write | env var → recorded → replay sees old value even after `export NAME=...` |
 
+## scripting frontend
+
+`.tape` files are now the everyday way to write programs against the
+runtime. a tiny tree-walking interpreter ships in `src/lang/`. it has
+ints, strings, bytes, lists, `let`, `if/else`, `while`, `for i in
+lo..hi`, the usual operators, and one host call per Runtime method
+(`clock.now`, `random.bits`, `io.write`, `fs.read`, `fs.write`,
+`env.get`, `args.get`, `time.sleep`) plus `print`, `len`, `int`, `str`,
+`byte_at`. site ids hash `(file_path, byte_offset)` so record + replay
+match across runs of the same source.
+
+```sh
+$ NAME=farkhad tape run examples/scripts/hello.tape --out hello.bin
+hello, farkhad
+$ tape replay examples/scripts/hello.tape --trace hello.bin
+hello, farkhad
+```
+
+no user-defined functions yet (TODO v0.3). built-in programs still work.
+
 ## the seven effects this build records
 
 | effect | record | replay |
