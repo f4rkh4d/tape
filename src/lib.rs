@@ -19,7 +19,7 @@ pub mod runtime;
 pub mod stats;
 
 pub use error::{RecordErr, ReplayErr};
-pub use event::{EffectKind, Event, Header, Trace};
+pub use event::{EffectKind, Event, Footer, Header, Outcome, Trace};
 pub use recording::Recording;
 pub use replaying::Replaying;
 pub use runtime::Runtime;

@@ -2,7 +2,7 @@
 //! show what a recording actually captured. nothing in here mutates the
 //! trace; it only formats.
 
-use crate::event::{EffectKind, Event, Trace};
+use crate::event::{EffectKind, Event, Outcome, Trace};
 
 /// optional filters used by `tape inspect` to narrow the dump. None on a
 /// field means "no filter for this dimension".
@@ -34,6 +34,10 @@ pub fn render_filtered(trace: &Trace, f: &Filter) -> String {
         hex(&trace.header.code_hash)
     ));
     out.push_str(&format!("events:         {}\n", trace.events.len()));
+    out.push_str(&format!(
+        "outcome:        {}\n",
+        format_outcome(&trace.footer.outcome)
+    ));
     if !f.is_empty() {
         out.push_str(&format!("filter:         {}\n", describe_filter(f)));
     }
@@ -111,6 +115,21 @@ pub fn parse_kind(s: &str) -> Option<EffectKind> {
         "env.get" => Some(EffectKind::EnvGet),
         "args.get" => Some(EffectKind::ArgsGet),
         _ => None,
+    }
+}
+
+pub fn format_outcome(o: &Outcome) -> String {
+    match o {
+        Outcome::Exit(0) => "exit 0 (clean)".to_string(),
+        Outcome::Exit(code) => format!("exit {code}"),
+        Outcome::Panic { message, location } => {
+            if location.is_empty() {
+                format!("panic: {message}")
+            } else {
+                format!("panic at {location}: {message}")
+            }
+        }
+        Outcome::Aborted => "aborted (no outcome recorded)".to_string(),
     }
 }
 

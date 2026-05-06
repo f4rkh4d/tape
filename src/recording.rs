@@ -1,4 +1,4 @@
-use crate::event::{EffectKind, Event, Header, Trace};
+use crate::event::{EffectKind, Event, Footer, Header, Outcome, Trace};
 use crate::runtime::Runtime;
 use std::io::Write;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -10,6 +10,7 @@ pub struct Recording {
     next_seq: u64,
     events: Vec<Event>,
     started_at: i64,
+    outcome: Option<Outcome>,
 }
 
 impl Recording {
@@ -22,11 +23,19 @@ impl Recording {
             next_seq: 0,
             events: Vec::new(),
             started_at,
+            outcome: None,
         }
+    }
+
+    /// declare how the recorded program ended. call this before `into_trace`;
+    /// otherwise the trace records `Outcome::Aborted`.
+    pub fn set_outcome(&mut self, outcome: Outcome) {
+        self.outcome = Some(outcome);
     }
 
     /// finish recording and return the trace. callers serialize it to disk.
     pub fn into_trace(self) -> Trace {
+        let last_seq = self.next_seq;
         Trace {
             header: Header {
                 version: Trace::SCHEMA_VERSION,
@@ -34,6 +43,10 @@ impl Recording {
                 code_hash: crate::code_hash_bytes(),
             },
             events: self.events,
+            footer: Footer {
+                outcome: self.outcome.unwrap_or(Outcome::Aborted),
+                last_seq,
+            },
         }
     }
 

@@ -14,6 +14,10 @@ pub fn render(trace: &Trace) -> String {
     out.push_str(&format!("schema version:  {}\n", trace.header.version));
     out.push_str(&format!("started_at:      {}\n", trace.header.started_at));
     out.push_str(&format!("events:          {}\n", n));
+    out.push_str(&format!(
+        "outcome:         {}\n",
+        crate::inspect::format_outcome(&trace.footer.outcome)
+    ));
 
     let total_args: usize = trace.events.iter().map(|e| e.args.len()).sum();
     let total_result: usize = trace.events.iter().map(|e| e.result.len()).sum();

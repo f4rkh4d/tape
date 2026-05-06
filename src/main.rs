@@ -10,6 +10,7 @@
 //! for the weekend mvp we keep the program set static and small.
 
 use std::process::ExitCode;
+use tape::event::Outcome;
 use tape::{diff, inspect, programs, stats, Recording, Replaying, Trace};
 
 fn main() -> ExitCode {
@@ -77,7 +78,38 @@ fn cmd_record(args: &[String]) -> ExitCode {
     };
 
     let mut rec = Recording::new();
-    let exit = prog(&mut rec);
+    let panic_loc = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+    {
+        let slot = panic_loc.clone();
+        std::panic::set_hook(Box::new(move |info| {
+            let loc = info
+                .location()
+                .map(|l| format!("{}:{}", l.file(), l.line()))
+                .unwrap_or_default();
+            if let Ok(mut g) = slot.lock() {
+                *g = loc;
+            }
+        }));
+    }
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| prog(&mut rec)));
+    let _ = std::panic::take_hook();
+    let exit = match result {
+        Ok(code) => {
+            rec.set_outcome(Outcome::Exit(code));
+            code
+        }
+        Err(payload) => {
+            let message = payload
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
+                .unwrap_or_else(|| "<panic with non-string payload>".to_string());
+            let location = panic_loc.lock().map(|g| g.clone()).unwrap_or_default();
+            eprintln!("[tape] program panicked: {message}");
+            rec.set_outcome(Outcome::Panic { message, location });
+            1
+        }
+    };
     let trace = rec.into_trace();
     let bytes = match bincode::serialize(&trace) {
         Ok(b) => b,
