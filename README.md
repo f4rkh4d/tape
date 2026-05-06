@@ -51,7 +51,9 @@ cargo build --release
 ```
 tape list                                show built-in demo programs
 tape record <program> [--out FILE]       run + record into FILE (default: trace.bin)
-tape replay <program> --trace FILE       replay program against FILE
+tape run <file.tape> [--out FILE]        interpret a .tape script and record into FILE
+tape replay <program|file.tape> --trace FILE
+                                         replay program (built-in or .tape) against FILE
 tape inspect <trace.bin>                 pretty-print the events in FILE
 tape diff <a.tape> <b.tape>              show the first divergence between two traces
 tape bench [--events N] [--effect KIND]  measure record / replay overhead

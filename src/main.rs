@@ -11,7 +11,7 @@
 
 use std::process::ExitCode;
 use tape::event::Outcome;
-use tape::{diff, inspect, programs, stats, Recording, Replaying, Trace};
+use tape::{diff, inspect, lang, programs, stats, Recording, Replaying, Trace};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
@@ -20,6 +20,7 @@ fn main() -> ExitCode {
     match cmd {
         Some("list") => cmd_list(),
         Some("record") => cmd_record(rest),
+        Some("run") => cmd_run(rest),
         Some("replay") => cmd_replay(rest),
         Some("inspect") => cmd_inspect(rest),
         Some("diff") => cmd_diff(rest),
@@ -46,7 +47,8 @@ fn print_usage() {
     println!("usage:");
     println!("  tape list                                       show built-in programs");
     println!("  tape record <program> [--out FILE]              run + record into FILE (default: trace.bin)");
-    println!("  tape replay <program> --trace FILE              replay program against FILE");
+    println!("  tape run <file.tape> [--out FILE]               interpret a .tape script and record into FILE");
+    println!("  tape replay <program|file.tape> --trace FILE     replay program (built-in or .tape script) against FILE");
     println!("  tape inspect <trace.bin> [--filter KIND] [--site HEX] [--since N] [--limit N] [--json]");
     println!("                                                  pretty-print the events in FILE");
     println!("  tape stats <trace.bin> [--json]                 summary stats: count by kind + hot sites");
@@ -135,6 +137,158 @@ fn cmd_record(args: &[String]) -> ExitCode {
     }
 }
 
+/// `tape run <file.tape>`: parse + interpret the script while recording.
+/// the `.tape` file is just source code; the trace it produces is identical
+/// in shape to one produced by a built-in program -- same effects, same
+/// site-id space.
+fn cmd_run(args: &[String]) -> ExitCode {
+    let Some(path) = args.first() else {
+        eprintln!("tape run: missing script path. usage: tape run FILE.tape [--out trace.bin]");
+        return ExitCode::from(2);
+    };
+    let out = parse_named_arg(args, "--out").unwrap_or_else(|| "trace.bin".to_string());
+
+    let src = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("tape run: read {path}: {e}");
+            return ExitCode::from(1);
+        }
+    };
+
+    let mut rec = Recording::new();
+    let panic_loc = std::sync::Arc::new(std::sync::Mutex::new(String::new()));
+    {
+        let slot = panic_loc.clone();
+        std::panic::set_hook(Box::new(move |info| {
+            let loc = info
+                .location()
+                .map(|l| format!("{}:{}", l.file(), l.line()))
+                .unwrap_or_default();
+            if let Ok(mut g) = slot.lock() {
+                *g = loc;
+            }
+        }));
+    }
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        lang::run_source(&mut rec, path, &src)
+    }));
+    let _ = std::panic::take_hook();
+    let exit = match result {
+        Ok(Ok(code)) => {
+            rec.set_outcome(tape::event::Outcome::Exit(code));
+            code
+        }
+        Ok(Err(e)) => {
+            // script-level error (lex / parse / runtime). record an exit-1 outcome
+            // so the trace is still well-formed; the human-readable error goes to
+            // stderr.
+            eprintln!("[tape] script error: {e}");
+            rec.set_outcome(tape::event::Outcome::Exit(1));
+            1
+        }
+        Err(payload) => {
+            let message = payload
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
+                .unwrap_or_else(|| "<panic with non-string payload>".to_string());
+            let location = panic_loc.lock().map(|g| g.clone()).unwrap_or_default();
+            eprintln!("[tape] script panicked: {message}");
+            rec.set_outcome(tape::event::Outcome::Panic { message, location });
+            1
+        }
+    };
+    let trace = rec.into_trace();
+    let bytes = match bincode::serialize(&trace) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("tape run: encode error: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    if let Err(e) = std::fs::write(&out, &bytes) {
+        eprintln!("tape run: write error: {e}");
+        return ExitCode::from(1);
+    }
+    eprintln!(
+        "[tape] recorded {} events ({} bytes) into {}",
+        trace.events.len(),
+        bytes.len(),
+        out
+    );
+    if exit != 0 {
+        ExitCode::from(exit as u8)
+    } else {
+        ExitCode::SUCCESS
+    }
+}
+
+/// replay a .tape script against an existing trace. drift between the
+/// recorded effects and what the script does now lands as a panic on the
+/// first divergent call -- same as for built-in programs.
+fn replay_script(script_path: &str, trace_path: &str) -> ExitCode {
+    let src = match std::fs::read_to_string(script_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("tape replay: read {script_path}: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    let bytes = match std::fs::read(trace_path) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("tape replay: read {trace_path}: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    let trace: Trace = match bincode::deserialize(&bytes) {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("tape replay: decode error: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    let mut rep = match Replaying::new(trace) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("tape replay: {e}");
+            return ExitCode::from(1);
+        }
+    };
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        lang::run_source(&mut rep, script_path, &src)
+    }));
+    match result {
+        Ok(Ok(exit)) => {
+            eprintln!(
+                "[tape] replayed {} / {} events from {}",
+                rep.position(),
+                rep.len(),
+                trace_path
+            );
+            if exit != 0 {
+                ExitCode::from(exit as u8)
+            } else {
+                ExitCode::SUCCESS
+            }
+        }
+        Ok(Err(e)) => {
+            eprintln!("tape replay: {e}");
+            ExitCode::from(1)
+        }
+        Err(payload) => {
+            let msg = payload
+                .downcast_ref::<String>()
+                .cloned()
+                .or_else(|| payload.downcast_ref::<&str>().map(|s| s.to_string()))
+                .unwrap_or_else(|| "replay panicked".to_string());
+            eprintln!("tape replay: {msg}");
+            ExitCode::from(1)
+        }
+    }
+}
+
 fn cmd_replay(args: &[String]) -> ExitCode {
     let Some(name) = args.first() else {
         eprintln!("tape replay: missing program name. try `tape list`.");
@@ -144,6 +298,11 @@ fn cmd_replay(args: &[String]) -> ExitCode {
         eprintln!("tape replay: missing --trace FILE");
         return ExitCode::from(2);
     };
+
+    // .tape source file? interpret it against the recorded trace.
+    if name.ends_with(".tape") {
+        return replay_script(name, &path);
+    }
 
     let Some(prog) = programs::lookup(name) else {
         eprintln!("tape replay: no such program: {name}");

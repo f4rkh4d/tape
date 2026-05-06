@@ -12,6 +12,7 @@ pub mod diff;
 pub mod error;
 pub mod event;
 pub mod inspect;
+pub mod lang;
 pub mod programs;
 pub mod recording;
 pub mod replaying;

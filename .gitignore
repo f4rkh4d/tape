@@ -1,4 +1,4 @@
 /target
 *.tape
-!examples/*.tape
+!examples/**/*.tape
 .DS_Store
