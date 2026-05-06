@@ -1,0 +1,35 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  build:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets -- -D warnings
+      - run: cargo build --release
+      - run: cargo test --release
+      - name: smoke — record + replay round-trip is byte-identical
+        if: matrix.os == 'ubuntu-latest'
+        run: |
+          set -eu
+          out_record=$(./target/release/tape record dice --out /tmp/dice.tape 2>/dev/null)
+          out_replay=$(./target/release/tape replay dice --trace /tmp/dice.tape 2>/dev/null)
+          test "$out_record" = "$out_replay" || { echo "drift: record vs replay mismatch"; exit 1; }
+          echo "ok: $out_record"
