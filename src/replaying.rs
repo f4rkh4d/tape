@@ -171,4 +171,14 @@ impl Runtime for Replaying {
             .unwrap_or_else(|e| panic!("replay: {e}"));
         bincode::deserialize::<Vec<String>>(result).expect("malformed trace: args.get result")
     }
+
+    fn time_sleep(&mut self, site: u32, millis: u64) {
+        let args = bincode::serialize(&millis).expect("serialize millis");
+        // intentionally do not actually sleep on replay. that's the point:
+        // a recorded 30-second sleep replays instantly. timing-dependent
+        // bugs become reproducible at developer speed.
+        let _ = self
+            .next_event(site, EffectKind::TimeSleep, &args)
+            .unwrap_or_else(|e| panic!("replay: {e}"));
+    }
 }

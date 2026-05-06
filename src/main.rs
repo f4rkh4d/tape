@@ -47,9 +47,9 @@ fn print_usage() {
     println!("  tape list                                       show built-in programs");
     println!("  tape record <program> [--out FILE]              run + record into FILE (default: trace.bin)");
     println!("  tape replay <program> --trace FILE              replay program against FILE");
-    println!("  tape inspect <trace.bin> [--filter KIND] [--site HEX] [--since N] [--limit N]");
+    println!("  tape inspect <trace.bin> [--filter KIND] [--site HEX] [--since N] [--limit N] [--json]");
     println!("                                                  pretty-print the events in FILE");
-    println!("  tape stats <trace.bin>                          summary stats: count by kind + hot sites");
+    println!("  tape stats <trace.bin> [--json]                 summary stats: count by kind + hot sites");
     println!("  tape diff <a.tape> <b.tape>                     show the first divergence between two traces");
     println!("  tape bench [--events N] [--effect KIND]         measure record / replay overhead");
     println!();
@@ -249,7 +249,11 @@ fn cmd_inspect(args: &[String]) -> ExitCode {
         }
     }
 
-    print!("{}", inspect::render_filtered(&trace, &filter));
+    if has_flag(args, "--json") {
+        println!("{}", inspect::render_json_filtered(&trace, &filter));
+    } else {
+        print!("{}", inspect::render_filtered(&trace, &filter));
+    }
     ExitCode::SUCCESS
 }
 
@@ -262,8 +266,16 @@ fn cmd_stats(args: &[String]) -> ExitCode {
         Ok(t) => t,
         Err(code) => return code,
     };
-    print!("{}", stats::render(&trace));
+    if has_flag(args, "--json") {
+        println!("{}", stats::render_json(&trace));
+    } else {
+        print!("{}", stats::render(&trace));
+    }
     ExitCode::SUCCESS
+}
+
+fn has_flag(args: &[String], name: &str) -> bool {
+    args.iter().any(|a| a == name)
 }
 
 /// accept either decimal or 0x-prefixed hex for u32 args.

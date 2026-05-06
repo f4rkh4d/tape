@@ -149,4 +149,10 @@ impl Runtime for Recording {
         self.record(site, EffectKind::ArgsGet, Vec::new(), result);
         v
     }
+
+    fn time_sleep(&mut self, site: u32, millis: u64) {
+        std::thread::sleep(std::time::Duration::from_millis(millis));
+        let args = bincode::serialize(&millis).expect("serialize millis");
+        self.record(site, EffectKind::TimeSleep, args, Vec::new());
+    }
 }

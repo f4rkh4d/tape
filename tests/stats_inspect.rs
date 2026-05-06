@@ -87,8 +87,37 @@ fn parse_kind_round_trips_every_variant() {
         EffectKind::FsWrite,
         EffectKind::EnvGet,
         EffectKind::ArgsGet,
+        EffectKind::TimeSleep,
     ] {
         assert_eq!(inspect::parse_kind(k.name()), Some(k));
     }
     assert_eq!(inspect::parse_kind("nonsense"), None);
+}
+
+#[test]
+fn stats_json_contains_top_level_fields() {
+    let json = stats::render_json(&fixture());
+    assert!(json.starts_with('{') && json.ends_with('}'));
+    assert!(json.contains("\"events\":4"));
+    assert!(json.contains("\"by_kind\":["));
+    assert!(json.contains("\"top_sites\":["));
+    assert!(json.contains("\"kind\":\"io.write\""));
+    assert!(json.contains("\"outcome\""));
+    // hot site is 0xB
+    assert!(json.contains("\"site\":\"0x0000000b\""));
+}
+
+#[test]
+fn inspect_json_filters_apply_to_event_array() {
+    let f = inspect::Filter {
+        kind: Some(EffectKind::IoWrite),
+        ..Default::default()
+    };
+    let json = inspect::render_json_filtered(&fixture(), &f);
+    assert!(json.contains("\"events_total\":4"));
+    assert!(json.contains("\"events_shown\":2"));
+    // only io.write events should appear in the array
+    assert_eq!(json.matches("\"kind\":\"io.write\"").count(), 2);
+    assert!(!json.contains("\"kind\":\"clock.now\""));
+    assert!(!json.contains("\"kind\":\"random.bits\""));
 }

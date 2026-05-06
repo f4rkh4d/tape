@@ -12,6 +12,7 @@ recording path that user programs use.
 | flaky.tape | flaky | a passing run of the rationale demo |
 | flaky-failed.tape | flaky | a failing run (random.bits returned a "bug" byte). this is the trace you would attach to a CI failure report |
 | greet.tape | greet | env.get("NAME") + io.write of the greeting |
+| heartbeat.tape | heartbeat | three time.sleep + clock.now + io.write loops. record takes ~600ms; replay finishes in milliseconds |
 
 ## try it
 

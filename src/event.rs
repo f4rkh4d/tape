@@ -14,6 +14,7 @@ pub enum EffectKind {
     FsWrite = 5,
     EnvGet = 6,
     ArgsGet = 7,
+    TimeSleep = 8,
 }
 
 impl EffectKind {
@@ -26,6 +27,7 @@ impl EffectKind {
             EffectKind::FsWrite => "fs.write",
             EffectKind::EnvGet => "env.get",
             EffectKind::ArgsGet => "args.get",
+            EffectKind::TimeSleep => "time.sleep",
         }
     }
 }

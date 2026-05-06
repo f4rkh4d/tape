@@ -44,4 +44,11 @@ pub trait Runtime {
     /// "no args, give me everything" effect). result = `Vec<String>` of the
     /// process's argv at record time. usually called once at program start.
     fn args_get(&mut self, site: u32) -> Vec<String>;
+
+    /// sleep for `millis` milliseconds. args = `millis` as u64; result is
+    /// empty (the call returns nothing). recording actually sleeps; replay
+    /// returns immediately. that's the point: a 30-second sleep that
+    /// reproduces in zero seconds is what makes flaky timing tests
+    /// debuggable. wall-clock time is still observable through `now`.
+    fn time_sleep(&mut self, site: u32, millis: u64);
 }

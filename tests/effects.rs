@@ -13,6 +13,7 @@ const SITE_FS_WRITE: u32 = 0xA000_0002;
 const SITE_ENV: u32 = 0xA000_0003;
 const SITE_ARGS: u32 = 0xA000_0004;
 const SITE_RANDOM: u32 = 0xA000_0005;
+const SITE_SLEEP: u32 = 0xA000_0006;
 
 // (no helper here — each test is small enough to inline its own setup,
 // and the effects tests need explicit control over both recording and
@@ -116,6 +117,48 @@ fn random_bits_args_mismatch_on_size_change() {
     let mut rep = Replaying::new(trace).unwrap();
     let bigger_args = bincode::serialize(&16u64).unwrap();
     match rep.next_event(SITE_RANDOM, EffectKind::RandomBits, &bigger_args) {
+        Err(tape::ReplayErr::ArgsMismatch { .. }) => {}
+        other => panic!("expected ArgsMismatch, got {:?}", other),
+    }
+}
+
+#[test]
+fn time_sleep_replay_does_not_actually_sleep() {
+    use std::time::Instant;
+
+    // record a 250ms sleep; the recording call DOES sleep.
+    let mut rec = Recording::new();
+    let t_record = Instant::now();
+    rec.time_sleep(SITE_SLEEP, 250);
+    let record_elapsed = t_record.elapsed();
+    assert!(
+        record_elapsed.as_millis() >= 200,
+        "recording must actually sleep (got {}ms)",
+        record_elapsed.as_millis()
+    );
+
+    // replay must NOT sleep -- that's the whole point.
+    let trace = rec.into_trace();
+    let mut rep = Replaying::new(trace).unwrap();
+    let t_replay = Instant::now();
+    rep.time_sleep(SITE_SLEEP, 250);
+    let replay_elapsed = t_replay.elapsed();
+    assert!(
+        replay_elapsed.as_millis() < 50,
+        "replay must skip the sleep (got {}ms)",
+        replay_elapsed.as_millis()
+    );
+}
+
+#[test]
+fn time_sleep_args_mismatch_on_different_duration() {
+    let mut rec = Recording::new();
+    rec.time_sleep(SITE_SLEEP, 10);
+    let trace = rec.into_trace();
+
+    let mut rep = Replaying::new(trace).unwrap();
+    let bigger = bincode::serialize(&500u64).unwrap();
+    match rep.next_event(SITE_SLEEP, EffectKind::TimeSleep, &bigger) {
         Err(tape::ReplayErr::ArgsMismatch { .. }) => {}
         other => panic!("expected ArgsMismatch, got {:?}", other),
     }

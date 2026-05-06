@@ -114,8 +114,65 @@ pub fn parse_kind(s: &str) -> Option<EffectKind> {
         "fs.write" => Some(EffectKind::FsWrite),
         "env.get" => Some(EffectKind::EnvGet),
         "args.get" => Some(EffectKind::ArgsGet),
+        "time.sleep" => Some(EffectKind::TimeSleep),
         _ => None,
     }
+}
+
+/// machine-readable variant. emits one self-contained json object with
+/// header, outcome, and the matching events as an array. external tools
+/// (a vscode panel, a grafana log shipper, a jq pipeline) consume this.
+pub fn render_json_filtered(trace: &Trace, f: &Filter) -> String {
+    use std::fmt::Write as _;
+    let matches: Vec<&Event> = trace
+        .events
+        .iter()
+        .filter(|ev| {
+            f.kind.is_none_or(|k| ev.kind == k)
+                && f.site.is_none_or(|s| ev.site == s)
+                && f.since.is_none_or(|s| ev.seq >= s)
+        })
+        .take(f.limit.unwrap_or(usize::MAX))
+        .collect();
+
+    let mut out = String::new();
+    out.push('{');
+    write!(
+        out,
+        "\"schema_version\":{},\"started_at\":{},\"code_hash\":\"{}\",\"events_total\":{},\"events_shown\":{},\"outcome\":{}",
+        trace.header.version,
+        trace.header.started_at,
+        full_hex(&trace.header.code_hash),
+        trace.events.len(),
+        matches.len(),
+        crate::stats::outcome_json(&trace.footer.outcome),
+    )
+    .unwrap();
+
+    out.push_str(",\"events\":[");
+    for (i, ev) in matches.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        write!(
+            out,
+            "{{\"seq\":{},\"site\":\"{:#010x}\",\"kind\":\"{}\",\"args_bytes\":{},\"result_bytes\":{},\"description\":{}}}",
+            ev.seq,
+            ev.site,
+            ev.kind.name(),
+            ev.args.len(),
+            ev.result.len(),
+            crate::stats::json_str(&describe(ev)),
+        )
+        .unwrap();
+    }
+    out.push(']');
+    out.push('}');
+    out
+}
+
+fn full_hex(b: &[u8]) -> String {
+    b.iter().map(|x| format!("{x:02x}")).collect()
 }
 
 pub fn format_outcome(o: &Outcome) -> String {
@@ -162,6 +219,9 @@ fn describe(ev: &Event) -> String {
             .map(|n| format!("env {n}"))
             .unwrap_or_else(|_| "env ?".to_string()),
         ArgsGet => "process argv".to_string(),
+        TimeSleep => bincode::deserialize::<u64>(&ev.args)
+            .map(|ms| format!("sleep {ms}ms"))
+            .unwrap_or_else(|_| "sleep ?".to_string()),
     }
 }
 

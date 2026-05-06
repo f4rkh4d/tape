@@ -27,6 +27,10 @@ pub const CATALOG: &[(&str, &str)] = &[
         "read TAPE_INPUT (default: README.md), count words, print result",
     ),
     ("greet", "read NAME from env, write a greeting to stdout"),
+    (
+        "heartbeat",
+        "sleep + tick three times; replay finishes instantly",
+    ),
 ];
 
 pub fn lookup(name: &str) -> Option<ProgramFn> {
@@ -37,6 +41,7 @@ pub fn lookup(name: &str) -> Option<ProgramFn> {
         "flaky" => Some(flaky),
         "wordcount" => Some(wordcount),
         "greet" => Some(greet),
+        "heartbeat" => Some(heartbeat),
         _ => None,
     }
 }
@@ -117,6 +122,19 @@ fn wordcount(rt: &mut dyn Runtime) -> i32 {
             1
         }
     }
+}
+
+/// the time.sleep demo. records as ~600ms wall-clock; replays in milliseconds.
+/// that gap is the point: when a real test sleeps 30s waiting for a flake to
+/// surface, you record once and then iterate against the trace at full speed.
+fn heartbeat(rt: &mut dyn Runtime) -> i32 {
+    for i in 1..=3 {
+        rt.time_sleep(site!(), 200);
+        let t = rt.now(site!());
+        let line = format!("tick {i} at {t}s\n");
+        rt.io_write(site!(), line.as_bytes());
+    }
+    0
 }
 
 /// minimal env-aware demo. reads NAME, writes a hello.
