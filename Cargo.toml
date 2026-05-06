@@ -1,0 +1,29 @@
+# the unscoped `tape` name on crates.io is held by an unrelated tar-archive
+# library (https://crates.io/crates/tape). when this crate is ready to
+# publish, rename to `tape-rt` (or similar) — same pattern as drift→drift-sql.
+[package]
+name        = "tape"
+version     = "0.0.1"
+edition     = "2021"
+description = "deterministic record + replay runtime. weekend prototype."
+license     = "MIT"
+publish     = false
+build       = "build.rs"
+
+[dependencies]
+bincode = "1.3"
+serde   = { version = "1", features = ["derive"] }
+
+[dev-dependencies]
+bincode = "1.3"
+
+[build-dependencies]
+sha2 = "0.10"
+
+[lib]
+name = "tape"
+path = "src/lib.rs"
+
+[[bin]]
+name = "tape"
+path = "src/main.rs"
