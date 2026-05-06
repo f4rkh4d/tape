@@ -10,7 +10,7 @@
 //! for the weekend mvp we keep the program set static and small.
 
 use std::process::ExitCode;
-use tape::{diff, inspect, programs, Recording, Replaying, Trace};
+use tape::{diff, inspect, programs, stats, Recording, Replaying, Trace};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
@@ -22,6 +22,7 @@ fn main() -> ExitCode {
         Some("replay") => cmd_replay(rest),
         Some("inspect") => cmd_inspect(rest),
         Some("diff") => cmd_diff(rest),
+        Some("stats") => cmd_stats(rest),
         Some("bench") => cmd_bench(rest),
         Some("--version") | Some("-V") => {
             println!("tape {}", env!("CARGO_PKG_VERSION"));
@@ -45,7 +46,9 @@ fn print_usage() {
     println!("  tape list                                       show built-in programs");
     println!("  tape record <program> [--out FILE]              run + record into FILE (default: trace.bin)");
     println!("  tape replay <program> --trace FILE              replay program against FILE");
-    println!("  tape inspect <trace.bin>                        pretty-print the events in FILE");
+    println!("  tape inspect <trace.bin> [--filter KIND] [--site HEX] [--since N] [--limit N]");
+    println!("                                                  pretty-print the events in FILE");
+    println!("  tape stats <trace.bin>                          summary stats: count by kind + hot sites");
     println!("  tape diff <a.tape> <b.tape>                     show the first divergence between two traces");
     println!("  tape bench [--events N] [--effect KIND]         measure record / replay overhead");
     println!();
@@ -171,22 +174,73 @@ fn cmd_inspect(args: &[String]) -> ExitCode {
         eprintln!("tape inspect: missing trace file");
         return ExitCode::from(2);
     };
-    let bytes = match std::fs::read(path) {
-        Ok(b) => b,
-        Err(e) => {
-            eprintln!("tape inspect: read error: {e}");
-            return ExitCode::from(1);
-        }
-    };
-    let trace: Trace = match bincode::deserialize(&bytes) {
+    let trace = match load_trace(path) {
         Ok(t) => t,
-        Err(e) => {
-            eprintln!("tape inspect: decode error: {e}");
-            return ExitCode::from(1);
-        }
+        Err(code) => return code,
     };
-    print!("{}", inspect::render(&trace));
+
+    let mut filter = inspect::Filter::default();
+    if let Some(k) = parse_named_arg(args, "--filter") {
+        match inspect::parse_kind(&k) {
+            Some(kind) => filter.kind = Some(kind),
+            None => {
+                eprintln!("tape inspect: unknown --filter kind: {k}");
+                return ExitCode::from(2);
+            }
+        }
+    }
+    if let Some(s) = parse_named_arg(args, "--site") {
+        match parse_u32_flexible(&s) {
+            Some(v) => filter.site = Some(v),
+            None => {
+                eprintln!("tape inspect: bad --site value: {s} (try 0xA0000001 or 2684354561)");
+                return ExitCode::from(2);
+            }
+        }
+    }
+    if let Some(s) = parse_named_arg(args, "--since") {
+        match s.parse::<u64>() {
+            Ok(v) => filter.since = Some(v),
+            Err(_) => {
+                eprintln!("tape inspect: bad --since value: {s}");
+                return ExitCode::from(2);
+            }
+        }
+    }
+    if let Some(s) = parse_named_arg(args, "--limit") {
+        match s.parse::<usize>() {
+            Ok(v) => filter.limit = Some(v),
+            Err(_) => {
+                eprintln!("tape inspect: bad --limit value: {s}");
+                return ExitCode::from(2);
+            }
+        }
+    }
+
+    print!("{}", inspect::render_filtered(&trace, &filter));
     ExitCode::SUCCESS
+}
+
+fn cmd_stats(args: &[String]) -> ExitCode {
+    let Some(path) = args.first() else {
+        eprintln!("tape stats: missing trace file");
+        return ExitCode::from(2);
+    };
+    let trace = match load_trace(path) {
+        Ok(t) => t,
+        Err(code) => return code,
+    };
+    print!("{}", stats::render(&trace));
+    ExitCode::SUCCESS
+}
+
+/// accept either decimal or 0x-prefixed hex for u32 args.
+fn parse_u32_flexible(s: &str) -> Option<u32> {
+    if let Some(rest) = s.strip_prefix("0x").or_else(|| s.strip_prefix("0X")) {
+        u32::from_str_radix(rest, 16).ok()
+    } else {
+        s.parse::<u32>().ok()
+    }
 }
 
 fn cmd_diff(args: &[String]) -> ExitCode {

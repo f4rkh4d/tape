@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 /// adding a new effect = adding a variant here + a method on Runtime +
 /// implementations in Recording and Replaying. the discriminant numbers are
 /// part of the on-disk trace format and must never be reused or renumbered.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 #[repr(u16)]
 pub enum EffectKind {
     ClockNow = 1,

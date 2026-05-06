@@ -16,6 +16,7 @@ pub mod programs;
 pub mod recording;
 pub mod replaying;
 pub mod runtime;
+pub mod stats;
 
 pub use error::{RecordErr, ReplayErr};
 pub use event::{EffectKind, Event, Header, Trace};
