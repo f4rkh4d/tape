@@ -10,6 +10,10 @@ pub enum EffectKind {
     ClockNow = 1,
     RandomBits = 2,
     IoWrite = 3,
+    FsRead = 4,
+    FsWrite = 5,
+    EnvGet = 6,
+    ArgsGet = 7,
 }
 
 impl EffectKind {
@@ -18,6 +22,10 @@ impl EffectKind {
             EffectKind::ClockNow => "clock.now",
             EffectKind::RandomBits => "random.bits",
             EffectKind::IoWrite => "io.write",
+            EffectKind::FsRead => "fs.read",
+            EffectKind::FsWrite => "fs.write",
+            EffectKind::EnvGet => "env.get",
+            EffectKind::ArgsGet => "args.get",
         }
     }
 }

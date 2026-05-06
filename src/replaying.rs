@@ -132,4 +132,43 @@ impl Runtime for Replaying {
         let _ = std::io::stdout().flush();
         bincode::deserialize::<u64>(result).expect("malformed trace: io.write result") as usize
     }
+
+    fn fs_read(&mut self, site: u32, path: &str) -> Result<Vec<u8>, String> {
+        let args = bincode::serialize(&path.to_string()).expect("serialize path");
+        let result = self
+            .next_event(site, EffectKind::FsRead, &args)
+            .unwrap_or_else(|e| panic!("replay: {e}"));
+        bincode::deserialize::<Result<Vec<u8>, String>>(result)
+            .expect("malformed trace: fs.read result")
+    }
+
+    fn fs_write(&mut self, site: u32, path: &str, buf: &[u8]) -> Result<usize, String> {
+        let args =
+            bincode::serialize(&(path.to_string(), buf.to_vec())).expect("serialize fs.write args");
+        let result = self
+            .next_event(site, EffectKind::FsWrite, &args)
+            .unwrap_or_else(|e| panic!("replay: {e}"));
+        // DO NOT actually write to the filesystem during replay. a destructive
+        // replay would be the worst possible footgun: the user replays a six-
+        // month-old trace and tape silently overwrites their current file
+        // with stale contents. the recorded result tells us what the original
+        // write reported; that's all the program needs to see.
+        bincode::deserialize::<Result<usize, String>>(result)
+            .expect("malformed trace: fs.write result")
+    }
+
+    fn env_get(&mut self, site: u32, name: &str) -> Option<String> {
+        let args = bincode::serialize(&name.to_string()).expect("serialize env name");
+        let result = self
+            .next_event(site, EffectKind::EnvGet, &args)
+            .unwrap_or_else(|e| panic!("replay: {e}"));
+        bincode::deserialize::<Option<String>>(result).expect("malformed trace: env.get result")
+    }
+
+    fn args_get(&mut self, site: u32) -> Vec<String> {
+        let result = self
+            .next_event(site, EffectKind::ArgsGet, &[])
+            .unwrap_or_else(|e| panic!("replay: {e}"));
+        bincode::deserialize::<Vec<String>>(result).expect("malformed trace: args.get result")
+    }
 }

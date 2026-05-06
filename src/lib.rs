@@ -8,6 +8,7 @@
 //! every effect call lands at the same site, with the same kind, with the
 //! same args. if any of those drift, replay aborts. that's the whole game.
 
+pub mod diff;
 pub mod error;
 pub mod event;
 pub mod inspect;

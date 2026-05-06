@@ -10,7 +10,7 @@
 //! for the weekend mvp we keep the program set static and small.
 
 use std::process::ExitCode;
-use tape::{inspect, programs, Recording, Replaying, Trace};
+use tape::{diff, inspect, programs, Recording, Replaying, Trace};
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
@@ -21,6 +21,8 @@ fn main() -> ExitCode {
         Some("record") => cmd_record(rest),
         Some("replay") => cmd_replay(rest),
         Some("inspect") => cmd_inspect(rest),
+        Some("diff") => cmd_diff(rest),
+        Some("bench") => cmd_bench(rest),
         Some("--version") | Some("-V") => {
             println!("tape {}", env!("CARGO_PKG_VERSION"));
             ExitCode::SUCCESS
@@ -44,6 +46,8 @@ fn print_usage() {
     println!("  tape record <program> [--out FILE]              run + record into FILE (default: trace.bin)");
     println!("  tape replay <program> --trace FILE              replay program against FILE");
     println!("  tape inspect <trace.bin>                        pretty-print the events in FILE");
+    println!("  tape diff <a.tape> <b.tape>                     show the first divergence between two traces");
+    println!("  tape bench [--events N] [--effect KIND]         measure record / replay overhead");
     println!();
     println!("the same <program> name must be passed to record and replay.");
     println!("trace files are bincode v1.3; on-disk schema lives in src/event.rs.");
@@ -183,6 +187,143 @@ fn cmd_inspect(args: &[String]) -> ExitCode {
     };
     print!("{}", inspect::render(&trace));
     ExitCode::SUCCESS
+}
+
+fn cmd_diff(args: &[String]) -> ExitCode {
+    if args.len() < 2 {
+        eprintln!("tape diff: need two trace files");
+        return ExitCode::from(2);
+    }
+    let path_a = &args[0];
+    let path_b = &args[1];
+    let trace_a = match load_trace(path_a) {
+        Ok(t) => t,
+        Err(code) => return code,
+    };
+    let trace_b = match load_trace(path_b) {
+        Ok(t) => t,
+        Err(code) => return code,
+    };
+    let label_a = std::path::Path::new(path_a)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(path_a)
+        .to_string();
+    let label_b = std::path::Path::new(path_b)
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or(path_b)
+        .to_string();
+    print!("{}", diff::render(&trace_a, &trace_b, &label_a, &label_b));
+
+    let same = trace_a.events.len() == trace_b.events.len()
+        && trace_a.events.iter().zip(&trace_b.events).all(|(x, y)| {
+            x.kind == y.kind && x.site == y.site && x.args == y.args && x.result == y.result
+        });
+    if same {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::from(1)
+    }
+}
+
+/// `tape bench` records and replays a synthetic load of N effect calls and
+/// reports wall-clock + per-event numbers. used to back the perf claims in
+/// the readme. it is a microbenchmark — not a substitute for profiling a
+/// real program — but it's the cheapest signal that nothing has gotten 10x
+/// slower since the last release.
+fn cmd_bench(args: &[String]) -> ExitCode {
+    let n: usize = parse_named_arg(args, "--events")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(10_000);
+    let effect = parse_named_arg(args, "--effect").unwrap_or_else(|| "clock".to_string());
+
+    use std::time::Instant;
+    use tape::Runtime;
+
+    let mut rec = Recording::new();
+    let t0 = Instant::now();
+    match effect.as_str() {
+        "clock" => {
+            for _ in 0..n {
+                rec.now(0xBEEF_0001);
+            }
+        }
+        "random" => {
+            for _ in 0..n {
+                rec.random_bits(0xBEEF_0002, 8);
+            }
+        }
+        "write" => {
+            for _ in 0..n {
+                rec.io_write(0xBEEF_0003, b".");
+            }
+        }
+        other => {
+            eprintln!("tape bench: unknown --effect: {other} (use clock|random|write)");
+            return ExitCode::from(2);
+        }
+    }
+    let record_ms = t0.elapsed().as_millis();
+    let trace = rec.into_trace();
+
+    let bytes = bincode::serialize(&trace).expect("encode trace");
+    let trace_kb = bytes.len() as f64 / 1024.0;
+
+    let trace2: Trace = bincode::deserialize(&bytes).expect("decode trace");
+    let mut rep = Replaying::new(trace2).expect("replay accept");
+    let t1 = Instant::now();
+    match effect.as_str() {
+        "clock" => {
+            for _ in 0..n {
+                rep.now(0xBEEF_0001);
+            }
+        }
+        "random" => {
+            for _ in 0..n {
+                rep.random_bits(0xBEEF_0002, 8);
+            }
+        }
+        "write" => {
+            for _ in 0..n {
+                rep.io_write(0xBEEF_0003, b".");
+            }
+        }
+        _ => unreachable!(),
+    }
+    let replay_ms = t1.elapsed().as_millis();
+
+    // for io.write the recorded path includes a real stdout flush per call;
+    // bury that in stderr below so it doesn't confuse readers.
+    if effect == "write" {
+        eprintln!();
+    }
+    eprintln!("tape bench: effect={effect}, events={n}");
+    eprintln!(
+        "  record:  {record_ms} ms  ({:.2} µs/event)",
+        record_ms as f64 * 1000.0 / n as f64
+    );
+    eprintln!(
+        "  replay:  {replay_ms} ms  ({:.2} µs/event)",
+        replay_ms as f64 * 1000.0 / n as f64
+    );
+    eprintln!(
+        "  trace:   {:.1} KiB  ({:.1} bytes/event)",
+        trace_kb,
+        bytes.len() as f64 / n as f64
+    );
+    ExitCode::SUCCESS
+}
+
+fn load_trace(path: &str) -> Result<Trace, ExitCode> {
+    let bytes = std::fs::read(path).map_err(|e| {
+        eprintln!("tape: read {path}: {e}");
+        ExitCode::from(1)
+    })?;
+    bincode::deserialize::<Trace>(&bytes).map_err(|e| {
+        eprintln!("tape: decode {path}: {e}");
+        ExitCode::from(1)
+    })
 }
 
 /// pull `--name VALUE` out of args, ignoring everything else.

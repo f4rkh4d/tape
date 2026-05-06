@@ -102,4 +102,38 @@ impl Runtime for Recording {
         self.record(site, EffectKind::IoWrite, args, result);
         n
     }
+
+    fn fs_read(&mut self, site: u32, path: &str) -> Result<Vec<u8>, String> {
+        let r: Result<Vec<u8>, String> = std::fs::read(path).map_err(|e| e.to_string());
+        let args = bincode::serialize(&path.to_string()).expect("serialize path");
+        let result = bincode::serialize(&r).expect("serialize fs.read result");
+        self.record(site, EffectKind::FsRead, args, result);
+        r
+    }
+
+    fn fs_write(&mut self, site: u32, path: &str, buf: &[u8]) -> Result<usize, String> {
+        let r: Result<usize, String> = std::fs::write(path, buf)
+            .map(|_| buf.len())
+            .map_err(|e| e.to_string());
+        let args =
+            bincode::serialize(&(path.to_string(), buf.to_vec())).expect("serialize fs.write args");
+        let result = bincode::serialize(&r).expect("serialize fs.write result");
+        self.record(site, EffectKind::FsWrite, args, result);
+        r
+    }
+
+    fn env_get(&mut self, site: u32, name: &str) -> Option<String> {
+        let v = std::env::var(name).ok();
+        let args = bincode::serialize(&name.to_string()).expect("serialize env name");
+        let result = bincode::serialize(&v).expect("serialize env value");
+        self.record(site, EffectKind::EnvGet, args, result);
+        v
+    }
+
+    fn args_get(&mut self, site: u32) -> Vec<String> {
+        let v: Vec<String> = std::env::args().collect();
+        let result = bincode::serialize(&v).expect("serialize argv");
+        self.record(site, EffectKind::ArgsGet, Vec::new(), result);
+        v
+    }
 }

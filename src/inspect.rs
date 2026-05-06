@@ -57,17 +57,29 @@ fn describe(ev: &Event) -> String {
             format!("{len} bytes of randomness")
         }
         IoWrite => match bincode::deserialize::<Vec<u8>>(&ev.args) {
-            Ok(b) => {
-                let preview = String::from_utf8_lossy(&b);
-                let preview = preview.trim_end();
-                let snippet: String = preview.chars().take(40).collect();
-                if preview.chars().count() > 40 {
-                    format!("{snippet}…")
-                } else {
-                    snippet
-                }
-            }
+            Ok(b) => preview(&b),
             Err(_) => "?".to_string(),
         },
+        FsRead => bincode::deserialize::<String>(&ev.args)
+            .map(|p| format!("read {p}"))
+            .unwrap_or_else(|_| "read ?".to_string()),
+        FsWrite => bincode::deserialize::<(String, Vec<u8>)>(&ev.args)
+            .map(|(p, b)| format!("write {p} ({} bytes)", b.len()))
+            .unwrap_or_else(|_| "write ?".to_string()),
+        EnvGet => bincode::deserialize::<String>(&ev.args)
+            .map(|n| format!("env {n}"))
+            .unwrap_or_else(|_| "env ?".to_string()),
+        ArgsGet => "process argv".to_string(),
+    }
+}
+
+fn preview(bytes: &[u8]) -> String {
+    let s = String::from_utf8_lossy(bytes);
+    let trimmed = s.trim_end();
+    let snippet: String = trimmed.chars().take(40).collect();
+    if trimmed.chars().count() > 40 {
+        format!("{snippet}…")
+    } else {
+        snippet
     }
 }
